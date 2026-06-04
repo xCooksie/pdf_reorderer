@@ -556,19 +556,54 @@
             }
         }
 
-        /* ===== Privacy Badge ===== */
-        .privacy-badge {
-            display: flex;
+        /* ===== Overwrite Checkbox ===== */
+        .checkbox-container {
+            display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 24px;
-            padding: 10px 16px;
-            background: rgba(52, 211, 153, 0.06);
-            border: 1px solid rgba(52, 211, 153, 0.15);
-            border-radius: var(--radius-sm);
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: color var(--transition);
+        }
+
+        .checkbox-container:hover {
+            color: var(--text-primary);
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 1px solid var(--border-accent);
+            border-radius: 4px;
+            background: var(--input-bg);
+            cursor: pointer;
+            position: relative;
+            transition: all var(--transition);
+        }
+
+        .checkbox-container input[type="checkbox"]:checked {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .checkbox-container input[type="checkbox"]:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
             font-size: 12px;
-            color: var(--success);
+            font-weight: bold;
+        }
+
+        .checkbox-container input[type="checkbox"]:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         /* ===== Footer ===== */
@@ -707,6 +742,14 @@
             <div class="hint-box">
                 💡 <strong>S</strong>와 같은 홀짝성을 갖는 페이지들이 먼저 배치되고, <strong>S+1</strong>과 같은 홀짝성의 페이지들이 뒤에 이어집니다.<br>
                 예) S=4(짝수)일 때: <strong>4, 6, 8 … 26</strong> 이후 <strong>5, 7, 9 … 27</strong>
+            </div>
+
+            <!-- Overwrite Option (Shown only if supported by browser) -->
+            <div id="overwriteContainer" style="display: none; margin-bottom: 18px;">
+                <label class="checkbox-container">
+                    <input type="checkbox" id="overwriteOption">
+                    <span>원본 파일에 바로 덮어쓰기 (PC 구글 드라이브 동기화 가능)</span>
+                </label>
             </div>
 
             <!-- Live Preview -->

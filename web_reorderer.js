@@ -8,26 +8,37 @@
 
     // ===== State =====
     let loadedFile = null;   // { name, size, arrayBuffer, numPages }
+    let fileHandle = null;   // FileSystemFileHandle for overwriting
 
     // ===== DOM References =====
-    const dropzone       = document.getElementById("dropzone");
-    const fileInput      = document.getElementById("fileInput");
-    const dropzoneEmpty  = document.getElementById("dropzoneEmpty");
-    const dropzoneLoaded = document.getElementById("dropzoneLoaded");
-    const fileNameEl     = document.getElementById("fileName");
-    const fileDetailEl   = document.getElementById("fileDetail");
-    const removeBtn      = document.getElementById("removeBtn");
-    const startPageInput = document.getElementById("startPage");
-    const endPageInput   = document.getElementById("endPage");
-    const previewContent = document.getElementById("previewContent");
-    const errorMsg       = document.getElementById("errorMsg");
-    const actionBtn      = document.getElementById("actionBtn");
-    const btnLabel       = document.getElementById("btnLabel");
-    const spinner        = document.getElementById("spinner");
-    const progressCont   = document.getElementById("progressContainer");
-    const progressFill   = document.getElementById("progressFill");
-    const progressLabel  = document.getElementById("progressLabel");
-    const toast          = document.getElementById("toast");
+    const dropzone           = document.getElementById("dropzone");
+    const fileInput          = document.getElementById("fileInput");
+    const dropzoneEmpty      = document.getElementById("dropzoneEmpty");
+    const dropzoneLoaded     = document.getElementById("dropzoneLoaded");
+    const fileNameEl         = document.getElementById("fileName");
+    const fileDetailEl       = document.getElementById("fileDetail");
+    const removeBtn          = document.getElementById("removeBtn");
+    const startPageInput     = document.getElementById("startPage");
+    const endPageInput       = document.getElementById("endPage");
+    const overwriteContainer = document.getElementById("overwriteContainer");
+    const overwriteOption    = document.getElementById("overwriteOption");
+    const previewContent     = document.getElementById("previewContent");
+    const errorMsg           = document.getElementById("errorMsg");
+    const actionBtn          = document.getElementById("actionBtn");
+    const btnLabel           = document.getElementById("btnLabel");
+    const spinner            = document.getElementById("spinner");
+    const progressCont       = document.getElementById("progressContainer");
+    const progressFill       = document.getElementById("progressFill");
+    const progressLabel      = document.getElementById("progressLabel");
+    const toast              = document.getElementById("toast");
+
+    // ===== Browser Support Check =====
+    const isFileSystemAccessSupported = typeof window.showOpenFilePicker === 'function';
+
+    // Show overwrite checkbox option if File System Access API is supported
+    if (isFileSystemAccessSupported && overwriteContainer) {
+        overwriteContainer.style.display = "block";
+    }
 
     // ===== Helpers =====
     function formatBytes(bytes) {
@@ -107,6 +118,30 @@
         return parts.join(", ");
     }
 
+    // ===== File Picker (FileSystem Access API) =====
+    async function selectFileViaPicker() {
+        try {
+            const [handle] = await window.showOpenFilePicker({
+                types: [
+                    {
+                        description: 'PDF Files',
+                        accept: {
+                            'application/pdf': ['.pdf']
+                        }
+                    }
+                ],
+                excludeAcceptAllOption: true,
+                multiple: false
+            });
+            fileHandle = handle;
+            const file = await handle.getFile();
+            await handleFile(file);
+        } catch (err) {
+            // User cancelled or error
+            console.log("File picker cancelled or failed:", err);
+        }
+    }
+
     // ===== File Loading =====
     async function handleFile(file) {
         if (!file || file.type !== "application/pdf") {
@@ -146,6 +181,7 @@
 
     function clearFile() {
         loadedFile = null;
+        fileHandle = null; // Reset file handle
         fileInput.value = "";
         dropzoneEmpty.style.display = "";
         dropzoneLoaded.style.display = "none";
@@ -235,22 +271,40 @@
             setProgress(95, "PDF 파일 생성 중…");
             const pdfBytes = await destDoc.save();
 
-            setProgress(100, "다운로드 준비 완료!");
+            const overwriteChecked = overwriteOption && overwriteOption.checked;
 
-            // Trigger download
-            const blob = new Blob([pdfBytes], { type: "application/pdf" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
+            if (overwriteChecked && fileHandle) {
+                setProgress(98, "기존 파일에 덮어쓰는 중…");
+                try {
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(pdfBytes);
+                    await writable.close();
+                    setProgress(100, "덮어쓰기 완료!");
+                    showToast("✅ 원본 파일에 덮어쓰기가 완료되었습니다!", "success");
+                } catch (writeErr) {
+                    if (writeErr.name === 'NotAllowedError') {
+                        throw new Error("파일 쓰기 권한이 거부되었습니다. (덮어쓰기를 승인하셔야 합니다.)");
+                    } else {
+                        throw writeErr;
+                    }
+                }
+            } else {
+                setProgress(100, "다운로드 준비 완료!");
+                // Trigger download
+                const blob = new Blob([pdfBytes], { type: "application/pdf" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
 
-            const baseName = loadedFile.name.replace(/\.pdf$/i, "");
-            a.href = url;
-            a.download = baseName + "_reordered.pdf";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+                const baseName = loadedFile.name.replace(/\.pdf$/i, "");
+                a.href = url;
+                a.download = baseName + "_reordered.pdf";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
 
-            showToast("✅ 재정렬이 완료되었습니다! 파일이 다운로드됩니다.", "success");
+                showToast("✅ 재정렬이 완료되었습니다! 파일이 다운로드됩니다.", "success");
+            }
         } catch (err) {
             showToast("오류 발생: " + err.message, "error");
             console.error(err);
@@ -269,22 +323,55 @@
     // ===== Event Listeners =====
 
     // Dropzone click → open file dialog
-    dropzone.addEventListener("click", (e) => {
+    dropzone.addEventListener("click", async (e) => {
         if (e.target === removeBtn || removeBtn.contains(e.target)) return;
-        fileInput.click();
+        
+        if (isFileSystemAccessSupported) {
+            await selectFileViaPicker();
+        } else {
+            fileInput.click();
+        }
     });
 
     fileInput.addEventListener("change", () => {
+        // fileInput.click()을 사용한 경우 (일반 파일 선택)
+        fileHandle = null; // 일반 브라우징은 핸들을 갖지 못함
         if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
     });
 
     // Drag & Drop
     dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); });
     dropzone.addEventListener("dragleave", () => { dropzone.classList.remove("drag-over"); });
-    dropzone.addEventListener("drop", (e) => {
+    dropzone.addEventListener("drop", async (e) => {
         e.preventDefault();
         dropzone.classList.remove("drag-over");
-        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        
+        if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+            const item = e.dataTransfer.items[0];
+            if (item.kind === 'file') {
+                if (isFileSystemAccessSupported && typeof item.getAsFileSystemHandle === 'function') {
+                    try {
+                        const handle = await item.getAsFileSystemHandle();
+                        if (handle.kind === 'file') {
+                            fileHandle = handle;
+                            const file = await handle.getFile();
+                            await handleFile(file);
+                            return;
+                        }
+                    } catch (err) {
+                        console.error("Error getting file handle from drop:", err);
+                    }
+                }
+                
+                // Fallback to standard File object
+                fileHandle = null;
+                const file = item.getAsFile();
+                if (file) handleFile(file);
+            }
+        } else if (e.dataTransfer.files.length > 0) {
+            fileHandle = null;
+            handleFile(e.dataTransfer.files[0]);
+        }
     });
 
     // Remove file button
